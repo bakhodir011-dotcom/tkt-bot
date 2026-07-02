@@ -82,6 +82,14 @@ T = {
         "thank_you":        "✅ Rahmat! Ro'yxatga olish muvaffaqiyatli yakunlandi.",
         "reg_another":      "🔁 Boshqa nomzodni ro'yxatga olish",
         "cancelled":        "❌ Ro'yxatga olish bekor qilindi. Boshlash uchun /start yuboring.",
+        "exam_details":     "Sizning imtihon ma'lumotlaringiz:",
+        "name_label":       "Ism",
+        "module_label":     "Modul",
+        "date_label":       "Sana",
+        "time_label":       "Vaqt",
+        "location_label":   "Manzil",
+        "fee_label":        "Imtihon to'lovi",
+        "contact_label":    "Savollar uchun",
         "step":             "📍 Qadam {step} / {total}",
         "back":             "⬅️ Orqaga",
         "months":           {"August": "Avgust", "September": "Sentabr", "October": "Oktabr"},
@@ -108,6 +116,14 @@ T = {
         "thank_you":        "✅ Спасибо! Регистрация успешно завершена.",
         "reg_another":      "🔁 Зарегистрировать другого кандидата",
         "cancelled":        "❌ Регистрация отменена. Отправьте /start чтобы начать снова.",
+        "exam_details":     "Данные вашего экзамена:",
+        "name_label":       "Имя",
+        "module_label":     "Модуль",
+        "date_label":       "Дата",
+        "time_label":       "Время",
+        "location_label":   "Адрес",
+        "fee_label":        "Стоимость экзамена",
+        "contact_label":    "По вопросам",
         "step":             "📍 Шаг {step} из {total}",
         "back":             "⬅️ Назад",
         "months":           {"August": "Август", "September": "Сентябрь", "October": "Октябрь"},
@@ -134,10 +150,24 @@ T = {
         "thank_you":        "✅ Thank you! Your registration has been successfully completed.",
         "reg_another":      "🔁 Register another candidate",
         "cancelled":        "❌ Registration cancelled. Send /start to begin again.",
+        "exam_details":     "Your exam details:",
+        "name_label":       "Name",
+        "module_label":     "Module",
+        "date_label":       "Date",
+        "time_label":       "Time",
+        "location_label":   "Location",
+        "fee_label":        "Exam fee",
+        "contact_label":    "Any questions",
         "step":             "📍 Step {step} of {total}",
         "back":             "⬅️ Back",
         "months":           {"August": "August", "September": "September", "October": "October"},
     },
+}
+
+MODULE_TIMES = {
+    "TKT Module 1": "10:00",
+    "TKT Module 2": "12:00",
+    "TKT Module 3": "14:00",
 }
 
 EXAM_DATES = {
@@ -456,8 +486,21 @@ async def on_photo(message: types.Message, state: FSMContext):
     except Exception as exc:
         logging.error("Admin notification error: %s", exc)
 
+    exam_time = MODULE_TIMES.get(data.get("module", ""), "")
+    thank_you_text = (
+        f"{T[lang]['thank_you']}\n\n"
+        f"🎫 <b>Registration ID: {reg_id}</b>\n\n"
+        f"📋 <b>{T[lang]['exam_details']}</b>\n"
+        f"👤 <b>{T[lang]['name_label']}:</b> {data.get('full_name','')}\n"
+        f"📚 <b>{T[lang]['module_label']}:</b> {data.get('module','')}\n"
+        f"📅 <b>{T[lang]['date_label']}:</b> {data.get('exam_date','')}\n"
+        f"⏰ <b>{T[lang]['time_label']}:</b> {exam_time}\n"
+        f"📍 <b>{T[lang]['location_label']}:</b> Samarkand city, Gagarin street, 95A\n"
+        f"💰 <b>{T[lang]['fee_label']}:</b> 686,000 so'm\n\n"
+        f"❓ <b>{T[lang]['contact_label']}:</b> @innovative_exam | +998 55 701 01 06"
+    )
     await message.answer(
-        f"{T[lang]['thank_you']}\n\n🎫 <b>Registration ID: {reg_id}</b>",
+        thank_you_text,
         reply_markup=kb_reg_another(lang),
         parse_mode="HTML",
     )
@@ -466,7 +509,12 @@ async def on_photo(message: types.Message, state: FSMContext):
             BufferedInputFile(
                 PAYMENT_PDF_PATH.read_bytes(),
                 filename="TKT_Payment_Instructions.pdf",
-            )
+            ),
+            caption=(
+                "💳 Imtihon uchun to'lovni <b>Click</b> yoki <b>Payme</b> ilovalari orqali amalga oshirish mumkin.\n\n"
+                "Qidiruvda <b>«Innovative Exams»</b> yozing, ma'lumotlarni kiritib, TKT Modulini tanlang."
+            ),
+            parse_mode="HTML",
         )
     await state.clear()
 
