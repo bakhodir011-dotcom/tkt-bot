@@ -582,6 +582,47 @@ async def cmd_export(message: types.Message):
         caption=f"📁 {len(regs)} registrations exported.",
     )
 
+# ── Admin: /broadcast ─────────────────────────────────────────────────────────
+@dp.message(Command("broadcast"))
+async def cmd_broadcast(message: types.Message):
+    if str(message.from_user.id) not in ADMIN_IDS:
+        return
+
+    text = message.text.removeprefix("/broadcast").strip()
+    if not text:
+        await message.answer(
+            "Usage:\n<code>/broadcast Your message here</code>\n\n"
+            "You can also send a photo with /broadcast as the caption.",
+            parse_mode="HTML",
+        )
+        return
+
+    db   = load_db()
+    regs = db["registrations"]
+    if not regs:
+        await message.answer("No registered candidates yet.")
+        return
+
+    # Get unique Telegram IDs
+    user_ids = list({r["tg_id"] for r in regs if r.get("tg_id")})
+
+    sent = 0
+    failed = 0
+    for uid in user_ids:
+        try:
+            await bot.send_message(chat_id=uid, text=text, parse_mode="HTML")
+            sent += 1
+        except Exception:
+            failed += 1
+
+    await message.answer(
+        f"📣 <b>Broadcast complete</b>\n\n"
+        f"✅ Sent: <b>{sent}</b>\n"
+        f"❌ Failed: <b>{failed}</b>\n"
+        f"👥 Total: <b>{len(user_ids)}</b>",
+        parse_mode="HTML",
+    )
+
 # ── Run ────────────────────────────────────────────────────────────────────────
 async def main():
     logging.basicConfig(level=logging.INFO)
