@@ -28,7 +28,7 @@ PAYMENT_PDF_PATH = Path("TKT Payment instructions.pdf")
 def load_db() -> dict:
     if DB_FILE.exists():
         return json.loads(DB_FILE.read_text(encoding="utf-8"))
-    return {"counter": 0, "registrations": []}
+    return {"counter": 0, "registrations": [], "closed_dates": []}
 
 def save_db(db: dict):
     DB_FILE.write_text(json.dumps(db, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -44,6 +44,10 @@ def is_duplicate(db: dict, passport: str, exam_date: str, module: str) -> bool:
     )
 
 # ── FSM States ─────────────────────────────────────────────────────────────────
+class Admin(StatesGroup):
+    broadcast_input = State()
+    search_input    = State()
+
 class Reg(StatesGroup):
     language  = State()
     full_name = State()
@@ -92,7 +96,7 @@ T = {
         "contact_label":    "Savollar uchun",
         "step":             "📍 Qadam {step} / {total}",
         "back":             "⬅️ Orqaga",
-        "months":           {"August": "Avgust", "September": "Sentabr", "October": "Oktabr"},
+        "months":           {"August": "Avgust", "September": "Sentabr", "October": "Oktabr", "November": "Noyabr", "December": "Dekabr"},
     },
     "ru": {
         "welcome":          "Добро пожаловать в бот регистрации TKT!\n\n📋 <b>Информация об экзамене:</b>\n🏫 <b>Центр:</b> Innovative Centre — UZ050\n📝 <b>Экзамен:</b> TKT (Teaching Knowledge Test)\n📍 <b>Адрес:</b> г. Самарканд, ул. Гагарина, 95A\n💰 <b>Стоимость:</b> 686,000 сум\n📢 <b>Telegram канал:</b> @tkt_uzb",
@@ -126,7 +130,7 @@ T = {
         "contact_label":    "По вопросам",
         "step":             "📍 Шаг {step} из {total}",
         "back":             "⬅️ Назад",
-        "months":           {"August": "Август", "September": "Сентябрь", "October": "Октябрь"},
+        "months":           {"August": "Август", "September": "Сентябрь", "October": "Октябрь", "November": "Ноябрь", "December": "Декабрь"},
     },
     "en": {
         "welcome":          "Welcome to TKT Registration bot!\n\n📋 <b>Exam details:</b>\n🏫 <b>Exam centre:</b> Innovative Centre — UZ050\n📝 <b>Exam:</b> TKT (Teaching Knowledge Test)\n📍 <b>Location:</b> Samarkand city, Gagarin street, 95A\n💰 <b>Exam fee:</b> 686,000 so'm\n📢 <b>Telegram channel:</b> @tkt_uzb",
@@ -160,7 +164,7 @@ T = {
         "contact_label":    "Any questions",
         "step":             "📍 Step {step} of {total}",
         "back":             "⬅️ Back",
-        "months":           {"August": "August", "September": "September", "October": "October"},
+        "months":           {"August": "August", "September": "September", "October": "October", "November": "November", "December": "December"},
     },
 }
 
@@ -174,7 +178,11 @@ EXAM_DATES = {
     "August":    ["August 2",    "August 9",    "August 23"],
     "September": ["September 6", "September 13","September 20"],
     "October":   ["October 4",   "October 11",  "October 18"],
+    "November":  ["November 1",  "November 8",  "November 15"],
+    "December":  ["December 6",  "December 13", "December 20"],
 }
+
+ALL_MONTHS = ["August", "September", "October", "November", "December"]
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 def step(lang: str, n: int) -> str:
@@ -200,14 +208,23 @@ def kb_lang():
     ])
 
 def kb_month(lang):
+    db     = load_db()
+    closed = set(db.get("closed_dates", []))
     labels = T[lang]["months"]
-    return InlineKeyboardMarkup(inline_keyboard=[
+    rows   = [
         [InlineKeyboardButton(text=labels[m], callback_data=f"month_{m}")]
-        for m in ["August", "September", "October"]
-    ])
+        for m in ALL_MONTHS
+        if any(d not in closed for d in EXAM_DATES[m])
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def kb_date(month, lang):
-    rows = [[InlineKeyboardButton(text=d, callback_data=f"date_{d}")] for d in EXAM_DATES[month]]
+    db     = load_db()
+    closed = set(db.get("closed_dates", []))
+    rows   = [
+        [InlineKeyboardButton(text=d, callback_data=f"date_{d}")]
+        for d in EXAM_DATES[month] if d not in closed
+    ]
     rows.append([InlineKeyboardButton(text=T[lang]["back"], callback_data="back_month")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -581,6 +598,213 @@ async def cmd_export(message: types.Message):
         ),
         caption=f"📁 {len(regs)} registrations exported.",
     )
+
+# ── Admin panel keyboard ───────────────────────────────────────────────────────
+def kb_admin_panel():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="📊 Stats",      callback_data="ap_stats"),
+            InlineKeyboardButton(text="📁 Export CSV", callback_data="ap_export"),
+        ],
+        [
+            InlineKeyboardButton(text="📣 Broadcast",  callback_data="ap_broadcast"),
+            InlineKeyboardButton(text="🔍 Search",     callback_data="ap_search"),
+        ],
+        [
+            InlineKeyboardButton(text="🔒 Close date", callback_data="ap_close"),
+            InlineKeyboardButton(text="🔓 Open date",  callback_data="ap_open"),
+        ],
+    ])
+
+def kb_dates_toggle(action: str):
+    rows = []
+    db     = load_db()
+    closed = set(db.get("closed_dates", []))
+    for month, dates in EXAM_DATES.items():
+        for d in dates:
+            if action == "close" and d not in closed:
+                rows.append([InlineKeyboardButton(text=d, callback_data=f"toggle_{action}_{d}")])
+            elif action == "open" and d in closed:
+                rows.append([InlineKeyboardButton(text=f"🔓 {d}", callback_data=f"toggle_{action}_{d}")])
+    rows.append([InlineKeyboardButton(text="❌ Cancel", callback_data="ap_cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+# ── /admin ─────────────────────────────────────────────────────────────────────
+@dp.message(Command("admin"))
+async def cmd_admin(message: types.Message):
+    if str(message.from_user.id) not in ADMIN_IDS:
+        return
+    db     = load_db()
+    closed = db.get("closed_dates", [])
+    closed_str = "\n".join(f"🔒 {d}" for d in closed) if closed else "None"
+    await message.answer(
+        f"⚙️ <b>Admin Panel</b>\n\n"
+        f"👥 Total registrations: <b>{len(db['registrations'])}</b>\n"
+        f"🔒 Closed dates:\n{closed_str}",
+        reply_markup=kb_admin_panel(),
+        parse_mode="HTML",
+    )
+
+@dp.callback_query(F.data == "ap_stats")
+async def ap_stats(cb: types.CallbackQuery):
+    if str(cb.from_user.id) not in ADMIN_IDS:
+        return
+    db   = load_db()
+    regs = db["registrations"]
+    if not regs:
+        await cb.answer("No registrations yet.", show_alert=True)
+        return
+    by_module = {}
+    by_date   = {}
+    for r in regs:
+        by_module[r["module"]]  = by_module.get(r["module"], 0) + 1
+        by_date[r["exam_date"]] = by_date.get(r["exam_date"], 0) + 1
+    module_lines = "\n".join(f"  • {k}: <b>{v}</b>" for k, v in sorted(by_module.items()))
+    date_lines   = "\n".join(f"  • {k}: <b>{v}</b>" for k, v in sorted(by_date.items()))
+    await cb.message.answer(
+        f"📊 <b>TKT Registration Stats</b>\n\n"
+        f"Total: <b>{len(regs)}</b>\n\n"
+        f"<b>By Module:</b>\n{module_lines}\n\n"
+        f"<b>By Exam Date:</b>\n{date_lines}",
+        parse_mode="HTML",
+    )
+    await cb.answer()
+
+@dp.callback_query(F.data == "ap_export")
+async def ap_export(cb: types.CallbackQuery):
+    if str(cb.from_user.id) not in ADMIN_IDS:
+        return
+    db   = load_db()
+    regs = db["registrations"]
+    if not regs:
+        await cb.answer("No registrations to export.", show_alert=True)
+        return
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=regs[0].keys())
+    writer.writeheader()
+    writer.writerows(regs)
+    csv_bytes = output.getvalue().encode("utf-8-sig")
+    await cb.message.answer_document(
+        BufferedInputFile(csv_bytes, filename=f"tkt_{datetime.now().strftime('%Y%m%d')}.csv"),
+        caption=f"📁 {len(regs)} registrations exported.",
+    )
+    await cb.answer()
+
+@dp.callback_query(F.data == "ap_broadcast")
+async def ap_broadcast_prompt(cb: types.CallbackQuery, state: FSMContext):
+    if str(cb.from_user.id) not in ADMIN_IDS:
+        return
+    await state.set_state(Admin.broadcast_input)
+    await cb.message.answer("📣 Enter the message to broadcast to all candidates:")
+    await cb.answer()
+
+@dp.message(Admin.broadcast_input)
+async def ap_broadcast_send(message: types.Message, state: FSMContext):
+    if str(message.from_user.id) not in ADMIN_IDS:
+        return
+    text    = message.text or ""
+    db      = load_db()
+    user_ids = list({r["tg_id"] for r in db["registrations"] if r.get("tg_id")})
+    sent = failed = 0
+    for uid in user_ids:
+        try:
+            await bot.send_message(chat_id=uid, text=text, parse_mode="HTML")
+            sent += 1
+        except Exception:
+            failed += 1
+    await message.answer(
+        f"📣 <b>Broadcast complete</b>\n\n✅ Sent: <b>{sent}</b>\n❌ Failed: <b>{failed}</b>",
+        parse_mode="HTML",
+    )
+    await state.clear()
+
+@dp.callback_query(F.data == "ap_search")
+async def ap_search_prompt(cb: types.CallbackQuery, state: FSMContext):
+    if str(cb.from_user.id) not in ADMIN_IDS:
+        return
+    await state.set_state(Admin.search_input)
+    await cb.message.answer("🔍 Enter passport/ID number to search (e.g. AA1234567):")
+    await cb.answer()
+
+@dp.message(Admin.search_input)
+async def ap_search_result(message: types.Message, state: FSMContext):
+    if str(message.from_user.id) not in ADMIN_IDS:
+        return
+    query = (message.text or "").strip().upper()
+    db    = load_db()
+    found = [r for r in db["registrations"] if r.get("passport","").upper() == query]
+    if not found:
+        await message.answer(f"❌ No registration found for <code>{query}</code>.", parse_mode="HTML")
+    else:
+        for r in found:
+            await message.answer(
+                f"🔍 <b>Found:</b>\n\n"
+                f"🎫 <b>ID:</b> {r['reg_id']}\n"
+                f"👤 <b>Name:</b> {r['full_name']}\n"
+                f"📅 <b>Date:</b> {r['exam_date']}\n"
+                f"📚 <b>Module:</b> {r['module']}\n"
+                f"🪪 <b>Passport:</b> {r['passport']}\n"
+                f"📞 <b>Phone:</b> {r['phone']}\n"
+                f"📧 <b>Email:</b> {r['email']}\n"
+                f"🕐 <b>Time:</b> {r['timestamp']}",
+                parse_mode="HTML",
+            )
+    await state.clear()
+
+@dp.callback_query(F.data == "ap_close")
+async def ap_close_prompt(cb: types.CallbackQuery):
+    if str(cb.from_user.id) not in ADMIN_IDS:
+        return
+    kb = kb_dates_toggle("close")
+    if not kb.inline_keyboard[:-1]:
+        await cb.answer("No open dates to close.", show_alert=True)
+        return
+    await cb.message.answer("🔒 Select a date to close:", reply_markup=kb)
+    await cb.answer()
+
+@dp.callback_query(F.data == "ap_open")
+async def ap_open_prompt(cb: types.CallbackQuery):
+    if str(cb.from_user.id) not in ADMIN_IDS:
+        return
+    kb = kb_dates_toggle("open")
+    if not kb.inline_keyboard[:-1]:
+        await cb.answer("No closed dates to open.", show_alert=True)
+        return
+    await cb.message.answer("🔓 Select a date to open:", reply_markup=kb)
+    await cb.answer()
+
+@dp.callback_query(F.data.startswith("toggle_close_"))
+async def toggle_close(cb: types.CallbackQuery):
+    if str(cb.from_user.id) not in ADMIN_IDS:
+        return
+    date = cb.data.removeprefix("toggle_close_")
+    db   = load_db()
+    if "closed_dates" not in db:
+        db["closed_dates"] = []
+    if date not in db["closed_dates"]:
+        db["closed_dates"].append(date)
+        save_db(db)
+        await cb.message.edit_text(f"🔒 <b>{date}</b> has been closed.", parse_mode="HTML")
+    await cb.answer()
+
+@dp.callback_query(F.data.startswith("toggle_open_"))
+async def toggle_open(cb: types.CallbackQuery):
+    if str(cb.from_user.id) not in ADMIN_IDS:
+        return
+    date = cb.data.removeprefix("toggle_open_")
+    db   = load_db()
+    if "closed_dates" not in db:
+        db["closed_dates"] = []
+    if date in db["closed_dates"]:
+        db["closed_dates"].remove(date)
+        save_db(db)
+        await cb.message.edit_text(f"🔓 <b>{date}</b> has been reopened.", parse_mode="HTML")
+    await cb.answer()
+
+@dp.callback_query(F.data == "ap_cancel")
+async def ap_cancel(cb: types.CallbackQuery):
+    await cb.message.delete()
+    await cb.answer()
 
 # ── Admin: /broadcast ─────────────────────────────────────────────────────────
 @dp.message(Command("broadcast"))
