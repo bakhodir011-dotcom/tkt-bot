@@ -61,7 +61,7 @@ TOTAL_STEPS = 7
 # ── Localisation ───────────────────────────────────────────────────────────────
 T = {
     "uz": {
-        "welcome":          "TKT Ro'yxatga olish botiga xush kelibsiz\nInnovative Centre, UZ050",
+        "welcome":          "TKT Ro'yxatga olish botiga xush kelibsiz!\n\n📋 <b>Imtihon ma'lumotlari:</b>\n🏫 <b>Imtihon markazi:</b> Innovative Centre — UZ050\n📝 <b>Imtihon:</b> TKT (Teaching Knowledge Test)\n📍 <b>Manzil:</b> Samarqand sh., Gagarin ko'chasi, 95A\n💰 <b>Imtihon to'lovi:</b> 686,000 so'm\n📢 <b>Telegram kanal:</b> @tkt_uzb",
         "full_name":        "👤 Ism va familiyangizni kiriting:",
         "select_month":     "📅 Oyni tanlang:",
         "select_date":      "📅 Sanani tanlang:",
@@ -87,7 +87,7 @@ T = {
         "months":           {"August": "Avgust", "September": "Sentabr", "October": "Oktabr"},
     },
     "ru": {
-        "welcome":          "Добро пожаловать в бот регистрации TKT\nInnovative Centre, UZ050",
+        "welcome":          "Добро пожаловать в бот регистрации TKT!\n\n📋 <b>Информация об экзамене:</b>\n🏫 <b>Центр:</b> Innovative Centre — UZ050\n📝 <b>Экзамен:</b> TKT (Teaching Knowledge Test)\n📍 <b>Адрес:</b> г. Самарканд, ул. Гагарина, 95A\n💰 <b>Стоимость:</b> 686,000 сум\n📢 <b>Telegram канал:</b> @tkt_uzb",
         "full_name":        "👤 Введите ваше полное имя:",
         "select_month":     "📅 Выберите месяц:",
         "select_date":      "📅 Выберите дату:",
@@ -113,7 +113,7 @@ T = {
         "months":           {"August": "Август", "September": "Сентябрь", "October": "Октябрь"},
     },
     "en": {
-        "welcome":          "Welcome to TKT Registration bot\nInnovative Centre, UZ050",
+        "welcome":          "Welcome to TKT Registration bot!\n\n📋 <b>Exam details:</b>\n🏫 <b>Exam centre:</b> Innovative Centre — UZ050\n📝 <b>Exam:</b> TKT (Teaching Knowledge Test)\n📍 <b>Location:</b> Samarkand city, Gagarin street, 95A\n💰 <b>Exam fee:</b> 686,000 so'm\n📢 <b>Telegram channel:</b> @tkt_uzb",
         "full_name":        "👤 Enter your full name:",
         "select_month":     "📅 Select Month:",
         "select_date":      "📅 Select a date:",
@@ -234,7 +234,7 @@ async def on_lang(cb: types.CallbackQuery, state: FSMContext):
     lang = cb.data.split("_")[1]
     await state.update_data(lang=lang)
     await state.set_state(Reg.full_name)
-    await cb.message.edit_text(T[lang]["welcome"])
+    await cb.message.edit_text(T[lang]["welcome"], parse_mode="HTML")
     await cb.message.answer(f"{step(lang, 1)}\n\n{T[lang]['full_name']}")
     await cb.answer()
 
